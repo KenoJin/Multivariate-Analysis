@@ -1,0 +1,256 @@
+---
+title: "Multivariate Analysis"
+subtitle: "Practice"
+author: "Joyce Jin"
+output:  
+  html_document:
+    keep_md: true
+---
+
+
+```{r setup, include=FALSE}
+#Load library
+knitr::opts_chunk$set(fig.path = "README_figs/README-")
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(vtable)
+library(patchwork)
+library(ggplot2)
+library(psych)
+library(corrplot)
+library(GPArotation)
+library(nFactors)
+library(car)
+library(vcdExtra)
+library(HH)
+library(VIM)
+```
+
+
+# Question 1: PCO
+In a psychology experiment from the 1950s, Ekman (1954) asked 31 subjects to rank the similarities of 14 different colors. His goal was to understand the underlying dimensionality of color perception. The similarity or confusion matrix was scaled to have values between 0 and 1. The ekman.csv similarity matrix can be found at :
+The colors that were often confused had similarities close to 1. Colours are encoded as wxxx, where xxx is the wavelength in nm
+
+Convert the ekman data into a dissimilarity matrix (Pay attention to the diagonal).
+
+Use PCO to analyse the dissimilarity matrix you just created and:
+
+(i) show the eigenvalue-screeplot, and
+
+(ii) plot the first two dimensions of the scores of the PCO analysis.
+```{r}
+ekman.dat<-read.csv("https://raw.githubusercontent.com/mpawley001/323/main/ekman.csv")
+```
+
+```{r}
+summary(ekman.dat)
+```
+
+```{r}
+ekman.dat
+```
+Convert the ekman data into a dissimilarity matrix (Pay attention to the diagonal).
+```{r}
+# Convert the data frame 'ekman.dat' to a matrix
+similarity_matrix <- as.matrix(ekman.dat)
+
+# Subtract the similarity_matrix from 1 to create the dissimilarity_matrix
+dissimilarity_matrix <- 1 - similarity_matrix
+
+# Set the diagonal elements of the dissimilarity_matrix to 0
+diag(dissimilarity_matrix) <- 0
+
+```
+
+Show dissimilarity_matrix
+```{r}
+dissimilarity_matrix 
+```
+Use PCO to analyse the dissimilarity matrix you just created and:
+(i) show the eigenvalue-screeplot, and
+
+(ii) plot the first two dimensions of the scores of the PCO analysis.
+```{r}
+# Perform PCoA
+n <- dim(dissimilarity_matrix)[1]
+PCO <- cmdscale(dissimilarity_matrix, k = (n - 1), eig = TRUE)
+```
+Scree plot
+
+```{r}
+# Extract the eigenvalues
+eig_values <- PCO$eig
+
+# Calculate the proportion of variance explained by each dimension
+variance_explained <- eig_values / sum(eig_values)
+
+# Create a scree plot using the base plot function
+plot(variance_explained, type = "b", xlab = "Dimension", ylab = "Proportion of Variance Explained",
+     main = "Scree Plot for PCoA Eigenvalues")
+
+```
+
+Score
+```{r}
+# Extract eigenvalues and calculate the percentage of variance explained
+lambda2 <- PCO$eig
+round(100 * lambda2 / sum(lambda2), digits = 2)
+
+# Create a new data frame containing the first two PCoA axes
+pco_dat <- data.frame(PCO1 = PCO$points[, 1], PCO2 = PCO$points[, 2])
+
+# Plot the data using ggplot2
+library(ggplot2)
+p_pco <- ggplot(pco_dat, aes(x = PCO1, y = PCO2)) + geom_point() + ggtitle("PCoA Plot")
+print(p_pco)
+```
+
+
+
+# Question 2: nMDs
+
+Changes in the community of organisms living in Waiwera estuary has been assessed by the Auckland Regional Council to determine the impact of housing developments. The data from a few sampling sites are held in :
+
+The 1st variable Site should be stored as a factor since it is just a label (either 2, 4, 6 or 8), the remaining 146 variables are counts of the animals found in each replicate taken at one of the sample sites.
+```{r}
+Waiwera.dat<-read.csv("https://raw.githubusercontent.com/mpawley001/323/main/WaiweraEstData.csv")
+Waiwera.dat[1:5,1:6]
+```
+```{r}
+dim(Waiwera.dat)
+```
+
+Answer the items below:
+
+(i) Produce a non-metric MDS using Bray-Curtis (BC) distance to visualize benthic fauna collected from sediment samples in the Waiwera estuary. (Use can calculate BC distance using wither the my.dist function code used int he lab, or by using the `vegan::vegdist()` function).
+```{r}
+library(vegan)
+# Calculate Bray-Curtis distance
+bc_dist <- vegdist(Waiwera.dat[,3:147], method = "bray")
+
+# Perform NMDS
+nmds <- metaMDS(bc_dist, distance = "bray", k = 2)
+
+# Extract NMDS scores
+nmds_scores <- data.frame(Site = Waiwera.dat$Site, NMDS1 = nmds$points[, 1], NMDS2 = nmds$points[, 2])
+
+# Visualize NMDS plot
+ggplot(nmds_scores, aes(x = NMDS1, y = NMDS2, color = as.factor(Site))) +
+  geom_point(size = 3) +
+  labs(color = "Site") +
+  ggtitle("Non-metric MDS (Bray-Curtis) for Waiwera Estuary Data") +
+  theme_minimal()
+
+```
+
+```{r}
+nmds$stress
+```
+The stress is 0.16, which is smaller than 0.2. Consider it's good.
+
+
+(ii) Create the associated Shepard plot of the Waiwera estuarine data (based on the same Bray-Curtis distances).
+
+```{r}
+stressplot(nmds)
+```
+
+```{r}
+Stress <- c(1:10)
+for(i in 1:10) {
+  Stress[i]  <-  metaMDSiter(vegdist(Waiwera.dat[,3:147], method="bray"), k = i,trace = FALSE)$stress
+}
+plot(Stress)
+```
+
+
+
+# Question 3: K-means clutsering of USArrests data
+
+In this question, we will use the built-in R data set USArrests, which contains statistics from 1973 in arrests per 100,000 residents for: Assault, Murder, and Rape as well as the percent of the population living in urban areas (UrbanPop). There are seven (4) short items, to answer in this question.
+```{r}
+data("USArrests")
+```
+
+As we don’t want the clustering algorithm to depend to an arbitrary variable unit, standardize the data using the R function scale().
+
+Use a Euclidean distance and visualize the distance matrix using the function get_dist() and fviz_dist() from the factoextra package.
+
+```{r}
+USArrests
+```
+```{r}
+dim(USArrests)
+```
+```{r}
+# Load libraries
+library(factoextra)
+library(cluster)
+library(gridExtra)
+
+# Scale the data
+scaled_USArrests <- scale(USArrests)
+
+# Calculate Euclidean distance
+dist_matrix <- get_dist(scaled_USArrests)
+
+# Visualize distance matrix
+fviz_dist(dist_matrix)
+```
+
+
+Answer the items below:
+1. From your distance matrix visualization, can you get a feel for any clusters? If so, which states appear to be be fairly similar to each other?
+*From the distance matrix visualization, it's difficult to identify clear clusters.However, there are some regions with similar colors, which indicate similar distances. For example, New York and Illinois; Nevada and vermont *
+
+
+2. Calculate a k-means solutions for 2 clusters. Visualize the clustering results using the function: fviz_cluster().
+
+```{r}
+# K-means clustering with 2 clusters
+kmeans_2 <- kmeans(scaled_USArrests, centers = 2)
+
+# Visualize clustering results
+fviz_cluster(kmeans_2, data = scaled_USArrests)
+
+```
+
+3. Repeat step 2 choosing different numbers of clusters (k=3, 4 and 5). Use the gridExtra:grid.arrange() function to plot the ordinations in a 2x2 grid.
+
+```{r fig.width =8}
+# K-means clustering with 3, 4, and 5 clusters
+kmeans_3 <- kmeans(scaled_USArrests, centers = 3)
+kmeans_4 <- kmeans(scaled_USArrests, centers = 4)
+kmeans_5 <- kmeans(scaled_USArrests, centers = 5)
+
+# Visualize clustering results
+viz_2 <- fviz_cluster(kmeans_2, data = scaled_USArrests)
+viz_3 <- fviz_cluster(kmeans_3, data = scaled_USArrests)
+viz_4 <- fviz_cluster(kmeans_4, data = scaled_USArrests)
+viz_5 <- fviz_cluster(kmeans_5, data = scaled_USArrests)
+
+# Display visualizations in a 2x2 grid
+grid.arrange(viz_2, viz_3, viz_4, viz_5, nrow = 2)
+
+```
+
+
+4. Use fviz_nbclust to create a Scree plot using the Within Group Sum-of-Squares as your criterion. Use the elbow method to choose the number of clusters (justify your choice from the plot).
+
+
+```{r}
+# Determine the optimal number of clusters using the elbow method
+fviz_nbclust(scaled_USArrests, kmeans, method = "wss")
+
+```
+
+
+The within-cluster sum of squares (wss) experiences a sharp decline from 1 to 4 clusters. However, beyond this point, the decrease in wss slows down, and surprisingly, there's an increase when it moves to 5 clusters. Therefore, considering this pattern, I select 4 as the appropriate number of clusters for the data. 
+
+
+
+
+
+
+
